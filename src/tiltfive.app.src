@@ -1,5 +1,5 @@
-{application, App,
- [{description, "App"},
+{application, tiltfive,
+ [{description, "TiltFive api"},
   {vsn, git},
   {modules, ["@@MODULES@@"]},
 %%  {mod, {App_app, []}},
