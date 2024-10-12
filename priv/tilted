@@ -1,0 +1,5 @@
+#!/bin/sh
+#  start tiltfive_test
+#
+
+LD_PRELOAD=$TILT_FIVE_SDK/lib/linux/x86_64/libTiltFiveNative.so erl -s tiltfive_test
