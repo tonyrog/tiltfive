@@ -20,7 +20,7 @@
 #define DETAIL_BUFfER_SIZE     1024
 
 #define DEBUG
-#define NIF_TRACE
+// #define NIF_TRACE
 
 // Dirty optional since 2.7 and mandatory since 2.12
 #if (ERL_NIF_MAJOR_VERSION > 2) || ((ERL_NIF_MAJOR_VERSION == 2) && (ERL_NIF_MINOR_VERSION >= 7))
@@ -421,7 +421,7 @@ static int get_t5_wand_stream_config(ErlNifEnv* env, ERL_NIF_TERM arg, T5_WandSt
     const ERL_NIF_TERM* elem;
     int arity;
 	
-    if (!enif_get_tuple(env, arg, &arity, &elem) || (arity != 3))
+    if (!enif_get_tuple(env, arg, &arity, &elem) || (arity != 2))
 	return 0;
     if (elem[0] != ATOM(t5_wand_stream_config))
 	return 0;
@@ -514,22 +514,20 @@ static int get_t5_frame_info(ErlNifEnv* env, ERL_NIF_TERM arg, T5_FrameInfo* inf
     else {
 	if (!enif_get_double(env, elem_vci[1], &startX_VCI))
 	    return 0;
-	if (!enif_get_double(env, elem_vci[2], &startX_VCI))
+	if (!enif_get_double(env, elem_vci[2], &startY_VCI))
 	    return 0;
-	if (!enif_get_double(env, elem_vci[3], &startY_VCI))
+	if (!enif_get_double(env, elem_vci[3], &width_VCI))
 	    return 0;
-	if (!enif_get_double(env, elem_vci[4], &width_VCI))
+	if (!enif_get_double(env, elem_vci[4], &height_VCI))
 	    return 0;
     }
-    if (!enif_get_double(env, elem[10], &height_VCI))
+    if (!get_t5_quat(env, elem[8], &info->rotToLVC_GBD))
 	return 0;
-    if (!get_t5_quat(env, elem[11], &info->rotToLVC_GBD))
+    if (!get_t5_vec3(env, elem[9], &info->posLVC_GBD))
 	return 0;
-    if (!get_t5_vec3(env, elem[12], &info->posLVC_GBD))
+    if (!get_t5_quat(env, elem[10], &info->rotToRVC_GBD))
 	return 0;
-    if (!get_t5_quat(env, elem[13], &info->rotToRVC_GBD))
-	return 0;
-    if (!get_t5_vec3(env, elem[14], &info->posRVC_GBD))
+    if (!get_t5_vec3(env, elem[11], &info->posRVC_GBD))
 	return 0;
     info->leftTexHandle = (void*) leftTexHandle;
     info->rightTexHandle = (void*) rightTexHandle;

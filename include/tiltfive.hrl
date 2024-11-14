@@ -85,14 +85,10 @@
 -type t5_graphics_api() :: integer().
 %% -type t5_graphics_context() :: reference().
 %% -type t5_image() :: term().
--type t5_frame_info() :: term().
 -type t5_wand_handle() :: reference().
 -type t5_param_glasses() :: integer().
 -type t5_depth_range() :: integer().
 -type t5_matrix_order() :: integer().
--type t5_wand_stream_config() :: term().
--type t5_cam_image() :: term().
--type t5_camera_stream_config() :: term().
 -type t5_cartesian_coordinate_handedness() :: term().
 -type t5_wand_stream_event_type() :: integer().
 -type t5_hand() :: integer().
@@ -166,6 +162,12 @@
 	}).
 -type t5_wand_report() :: #t5_wand_report{}.
 
+-record(t5_wand_stream_config,
+	{
+	 enabled :: boolean()
+	}).
+-type t5_wand_stream_config() :: #t5_wand_stream_config{}.
+
 -record(t5_wand_stream_event,
 	{
 	 wandId :: t5_wand_handle(),
@@ -192,5 +194,52 @@
 	 gameboardType :: t5_gameboard_type()
 	}).
 -type t5_glasses_pos() :: #t5_glasses_pose {}.
+
+-record(t5_camera_stream_config,
+	{
+	 cameraIndex :: uint8_t(),
+	 enabled :: boolean()
+	}).
+-type t5_camera_stream_config() :: #t5_camera_stream_config{}.
+
+-record(vci, 
+	{
+	 startX_VCI :: float(),
+	 startY_VCI :: float(),
+	 width_VCI :: float(),
+	 height_VCI :: float()
+	}).
+
+-record(t5_frame_info,
+	{
+	 leftTexHandle :: t5_handle(),
+	 rightTexHandle :: t5_handle(),
+	 texWidth :: integer(),
+	 texHeight :: integer(),
+	 isSrgb :: boolean(),
+	 isUpsideDown :: boolean(),
+	 vci :: #vci{},
+	 rotToLVC_GDB :: t5_quat(),
+	 posLVC_GDB :: t5_vec3(),
+	 rotToRVC_GDB :: t5_quat(),
+	 posRVC_GDB :: t5_vec3()
+	}).
+-type t5_frame_info() :: #t5_frame_info{}.
+
+
+-record(t5_cam_image, 
+	{
+	 imageWidth :: integer(),
+	 imageHeight :: integer(),
+	 imageStride :: integer(),
+	 cameraIndex :: uint8_t(),
+	 illuminationMode :: uint8_t(),
+	 bufferSize :: integer(),
+	 pixelData :: binary(),   %% or pointer/handle fixme
+	 posCAM_GBD :: t5_vec3(),
+	 rotToCAM_GBD :: t5_quat()
+}).
+-type t5_cam_image() :: #t5_cam_image{}.
+
 -endif.
 
