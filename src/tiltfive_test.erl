@@ -7,64 +7,66 @@
 
 -include("../include/tiltfive.hrl").
 
-glasses_names() ->
-    #{
-      "0P9T-0801-0AE8" => "Player 1",
-      "0P9T-0801-0A9C" => "Player 2"
-     }.
-
 start() ->
-    case tiltfive:get_gameboard_size(?kT5_GameboardType_XE_Raised) of
+    application:load(tiltfive),
+    GameBoardSize =
+	case application:get(tiltfive, gameboard_size, xe_raised) of
+	    undefined -> ?kT5_GameboardType_None;
+	    none -> ?kT5_GameboardType_None;
+	    le -> ?kT5_GameboardType_LE;
+	    xe -> ?kT5_GameboardType_XE;
+	    xe_raised -> ?kT5_GameboardType_XE_Raised
+	end,
+    case tiltfive:get_gameboard_size(GameBoardSize) of
 	{error, Reason} ->
 	    io:format("Failed to get gameboard size: ~p\n", [Reason]),
 	    wait_for_service(#t5_gameboard_size{});
-	GameBoardSize ->
+	T5GameBoardSize ->
 	    io:format("Gameboard size: ~p\n", [GameBoardSize]),
-	    wait_for_service(GameBoardSize)
+	    wait_for_service(T5GameBoardSize)
     end.
 
-
-wait_for_service(GameBoardSize) ->
+wait_for_service(T5GameBoardSize) ->
     case tiltfive:get_system_utf8_param(?kT5_ParamSys_UTF8_Service_Version) of
 	{error, Reason} ->
 	    io:format("Failed to get service version: ~p\n", [Reason]),
 	    timer:sleep(1000),
-	    wait_for_service(GameBoardSize);
+	    wait_for_service(T5GameBoardSize);
 	Version ->
 	    io:format("Service version: ~p\n", [Version]),
-	    handle_service([], GameBoardSize, #{})
+	    handle_service([], T5GameBoardSize, #{})
     end.
 
 %% scan for new glasses or removed glasses
-handle_service(GlassesList0, GameBoardSize, Map) ->
+handle_service(GlassesList0, T5GameBoardSize, Map) ->
     case tiltfive:list_glasses() of
 	{error, Reason} ->
 	    io:format("Failed to list glasses: ~p\n", [Reason]),
-	    handle_service_(GlassesList0, GameBoardSize, Map);
+	    handle_service_(GlassesList0, T5GameBoardSize, Map);
 	GlassesList1 ->
 	    Added = GlassesList1 -- GlassesList0,
 	    Removed = GlassesList0 -- GlassesList1,
 	    Map1 = stop_glasses(Removed, Map),
 	    Map2 = start_glasses(Added, Map1),
-	    handle_service_(GlassesList1, GameBoardSize, Map2)
+	    handle_service_(GlassesList1, T5GameBoardSize, Map2)
     end.
 
-handle_service_(GlassesList, GameBoardSize, Map) ->
+handle_service_(GlassesList, T5GameBoardSize, Map) ->
     receive
 	{'DOWN', Mon, _, _, _} ->
 	    case maps:get(Mon, Map, undefined) of
 		undefined ->
-		    handle_service(GlassesList, GameBoardSize, Map);
+		    handle_service(GlassesList, T5GameBoardSize, Map);
 		Pid ->
 		    Glasses = maps:get(Pid, Map),
 		    io:format("~s: Glasses terminated\n", [Glasses]),
 		    Map1 = maps:remove(Glasses, Map),
 		    Map2 = maps:remove(Pid, Map1),
 		    Map3 = maps:remove(Mon, Map2),
-		    handle_service_(GlassesList--[Glasses], GameBoardSize, Map3)
+		    handle_service_(GlassesList--[Glasses],T5GameBoardSize,Map3)
 	    end
     after 1000 ->
-	    handle_service(GlassesList, GameBoardSize, Map)
+	    handle_service(GlassesList, T5GameBoardSize, Map)
     end.
 
 start_glasses([], Map) -> Map;
@@ -82,7 +84,8 @@ stop_glasses([Glasses|Removed], Map) ->
     stop_glasses(Removed, maps:remove(Glasses, Map)).
 
 init_glasses(Glasses) ->
-    DisplayName = maps:get(Glasses, glasses_names(), "NoName"),
+    Names = application:get(tiltfive, names, #{}),
+    DisplayName = maps:get(Glasses, Names, "NoName"),
     io:format("~s: Init Glasses: name=~s\n", [Glasses, DisplayName]),
     case tiltfive:create_glasses(Glasses) of
 	GlassesRef when is_reference(GlassesRef) ->

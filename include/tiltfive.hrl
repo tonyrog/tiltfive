@@ -8,7 +8,7 @@
 -ifndef(__TILTFIVE_HRL__).
 
 %% t5_gameboard_type()
--define(kT5_GameboardType_Nonem, 1).
+-define(kT5_GameboardType_None, 1).
 -define(kT5_GameboardType_LE, 2).
 -define(kT5_GameboardType_XE, 3).
 -define(kT5_GameboardType_XE_Raised,4).
