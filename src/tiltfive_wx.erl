@@ -54,19 +54,29 @@ test() ->
     [Tl,Tr] = gl:genTextures(2),
     Color1 = {1.0, 0.0, 0.0},
     Color2 = {0.0, 1.0, 0.0},
+
     init_framebuffer0(2*?WIDTH, ?HEIGHT),
+
     init_framebuffer(L, Tl, ?WIDTH, ?HEIGHT),
     init_framebuffer(R, Tr, ?WIDTH, ?HEIGHT),
+
+    %% gl:enable(?GL_BLEND),
+    %% gl:blendFunc(?GL_SRC_ALPHA, ?GL_ONE_MINUS_SRC_ALPHA),
+    %% gl:drawBuffers([?GL_COLOR_ATTACHMENT0]),
+    %% gl:generateMipmap(?GL_TEXTURE_2D),
+
 
     %% Draw first time 
 
     Cube1 = #cube{id=left,framebuffer=L,texture=Tl,color=Color1},
     A1 = 45.0,
     render_cube(Cube1, A1, ?WIDTH, ?HEIGHT),
+    %% dump_texture(Cube1, ?WIDTH, ?HEIGHT),
 
     Cube2 = #cube{id=right,framebuffer=R,texture=Tr,color=Color2},
     A2 = 45.0 + 10.0,
     render_cube(Cube2, A2, ?WIDTH, ?HEIGHT),
+    %% dump_texture(Cube2, ?WIDTH, ?HEIGHT),
 
     setup_screen(?WIDTH, ?HEIGHT),
     draw_screen(Cube1#cube.texture, Cube2#cube.texture),
@@ -74,16 +84,17 @@ test() ->
     wxGLCanvas:swapBuffers(Canvas),
     timer:sleep(1000),
 
-    Step = 2.0,
+    Step1 = 2.0,
+    Step2 = -2.0,
     %% run a loop
-    draw_loop(?WIDTH,?HEIGHT,Frame,Canvas,Cube1,Cube2,A1,Step).
+    draw_loop(?WIDTH,?HEIGHT,Frame,Canvas,Cube1,Cube2,A1,A2,Step1,Step2).
 
-draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A, Step) ->
-    A1 = math:fmod(A+Step, 360.0),
-    A2 = math:fmod(A1+10.0, 360.0),
+draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A1, A2, Step1,Step2) ->
+    A11 = math:fmod(A1+Step1, 360.0),
+    A21 = math:fmod(A2+Step2, 360.0),
 
-    render_cube(Cube1, A1, W, H),
-    render_cube(Cube2, A2, W, H),
+    render_cube(Cube1, A11, W, H),
+    render_cube(Cube2, A21, W, H),
     
     setup_screen(W, H),
     draw_screen(Cube1#cube.texture, Cube2#cube.texture),
@@ -91,15 +102,15 @@ draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A, Step) ->
     wxGLCanvas:swapBuffers(Canvas),
     timer:sleep(50),
 
-    draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A1, Step).
+    draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A11, A21, Step1, Step2).
 
 init_framebuffer0(W, H) ->
     gl:bindFramebuffer(?GL_FRAMEBUFFER, 0),
-    [C] = gl:genRenderbuffers(1),
-    gl:bindRenderbuffer(?GL_RENDERBUFFER, C),
-    gl:renderbufferStorage(?GL_RENDERBUFFER, ?GL_RGBA, W, H),
-    gl:framebufferRenderbuffer(?GL_FRAMEBUFFER, ?GL_COLOR_ATTACHMENT0, 
-			       ?GL_RENDERBUFFER, C),
+%%    [C] = gl:genRenderbuffers(1),
+%%    gl:bindRenderbuffer(?GL_RENDERBUFFER, C),
+%%    gl:renderbufferStorage(?GL_RENDERBUFFER, ?GL_RGBA, W, H),
+%%    gl:framebufferRenderbuffer(?GL_FRAMEBUFFER, ?GL_COLOR_ATTACHMENT0, 
+%%			       ?GL_RENDERBUFFER, C),
     ok.
 
 %% setup framebuffer used to render cube
@@ -107,29 +118,23 @@ init_framebuffer0(W, H) ->
 init_framebuffer(B, T, W, H) ->
     gl:bindFramebuffer(?GL_FRAMEBUFFER, B),
     gl:bindTexture(?GL_TEXTURE_2D, T),
-    gl:texStorage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, W, H),
-    gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, W, H, 0,
-		  ?GL_RGBA, ?GL_UNSIGNED_BYTE, 0),
 
-    gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MIN_FILTER, ?GL_LINEAR),
-    gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MAG_FILTER, ?GL_LINEAR),
-    %% Create depth buffer / color buffer
-    [D,C] = gl:genRenderbuffers(2),
-    %% setup color buffer with a target texture
-    gl:bindRenderbuffer(?GL_RENDERBUFFER, C),
-    gl:renderbufferStorage(?GL_RENDERBUFFER, ?GL_RGBA, W, H),
-    gl:framebufferRenderbuffer(?GL_FRAMEBUFFER, ?GL_COLOR_ATTACHMENT0, 
-			       ?GL_RENDERBUFFER, C),
-    gl:framebufferTexture(?GL_FRAMEBUFFER, ?GL_COLOR_ATTACHMENT0, T, 0),
+    gl:texImage2D(?GL_TEXTURE_2D,0,?GL_RGBA,W,H,0,?GL_RGBA,
+		  ?GL_UNSIGNED_BYTE,0),
+    gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MIN_FILTER, ?GL_NEAREST),
+    gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_MAG_FILTER, ?GL_NEAREST),
+    gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_WRAP_S, ?GL_CLAMP_TO_EDGE),
+    gl:texParameteri(?GL_TEXTURE_2D, ?GL_TEXTURE_WRAP_T, ?GL_CLAMP_TO_EDGE),
+    gl:framebufferTexture2D(?GL_FRAMEBUFFER, ?GL_COLOR_ATTACHMENT0, 
+			    ?GL_TEXTURE_2D, T, 0),
+    gl:drawBuffer(?GL_COLOR_ATTACHMENT0),
 
     %% setup depth buffer
+    [D] = gl:genRenderbuffers(1),
     gl:bindRenderbuffer(?GL_RENDERBUFFER, D),
-    gl:renderbufferStorage(?GL_RENDERBUFFER, ?GL_DEPTH_COMPONENT, W, H),
-    gl:framebufferRenderbuffer(?GL_FRAMEBUFFER, ?GL_DEPTH_ATTACHMENT, 
+    gl:renderbufferStorage(?GL_RENDERBUFFER, ?GL_DEPTH24_STENCIL8, W, H),
+    gl:framebufferRenderbuffer(?GL_FRAMEBUFFER, ?GL_DEPTH_STENCIL_ATTACHMENT, 
 			       ?GL_RENDERBUFFER, D),
-
-
-    gl:enable(?GL_DEPTH_TEST),
 
     Status = case gl:checkFramebufferStatus(?GL_FRAMEBUFFER) of
 		 ?GL_FRAMEBUFFER_COMPLETE -> ok; 
@@ -159,6 +164,16 @@ save_png(Pixels, W, H, Format, Filename) ->
     epx_image:save(Image).
 -endif.
 
+dump_texture(Cube, W, H) ->
+    io:format("bump 32 pixels from ~s\n", [Cube#cube.id]),
+    gl:bindTexture(?GL_TEXTURE_2D, Cube#cube.texture),
+    Pixels = create_texture(W, H, {0,0,0}),
+    gl:getTexImage(?GL_TEXTURE_2D, 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Pixels),
+    SubPixels = binary:part(Pixels, 0, 32),
+    io:format("Data = ~p\n", [SubPixels]),
+    gl:bindTexture(?GL_TEXTURE_2D, 0).
+
+
 render_cube(#cube{id=ID,framebuffer=F, texture=T, color=C, png=Png}, A, W, H) ->
     gl:bindFramebuffer(?GL_FRAMEBUFFER, F),
     setup_cube(C, W, H),
@@ -177,13 +192,14 @@ set_texture(ID, T, C={R,G,B}, W, H) ->
     Data = create_texture(W, H, C1),
     gl:bindTexture(?GL_TEXTURE_2D, T),
     gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, W, H, 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Data),
+    gl:bindTexture(?GL_TEXTURE_2D, 0),
     ok.
 
 setup_cube({R,G,B}, W, H) ->
-    %% gl:disable(?GL_BLEND), 
-    gl:viewport(0,0,W,H),
-    gl:clearColor(R, G, B, 1.0),
+    gl:clearColor(0.0, 0.0, 0.0, 0.0),  %% totally transparent?
     gl:clear(?GL_COLOR_BUFFER_BIT bor ?GL_DEPTH_BUFFER_BIT),
+    gl:enable(?GL_DEPTH_TEST),
+    gl:viewport(0,0,W,H),
     gl:matrixMode(?GL_PROJECTION),
     gl:loadIdentity(),
     gl:ortho( -2.0, 2.0, -2.0*H/W, 2.0*H/W, -20.0, 20.0),
@@ -192,65 +208,98 @@ setup_cube({R,G,B}, W, H) ->
     gl:depthFunc(?GL_LESS),
     ok.
 
+-define(BLACK,  0.0, 0.0, 0.0).
+-define(GRAY,   0.5, 0.5, 0.5).
+-define(RED,    1.0, 0.0, 0.0).
+-define(GREEN,  0.0, 1.0, 0.0).
+-define(BLUE,   0.0, 0.0, 1.0).
+-define(ORANGE, 1.0, 0.5, 0.0).
+-define(YELLOW, 1.0, 1.0, 0.0).
+-define(MAGENTA,1.0, 0.0, 1.0).
+-define(WHITE,  1.0, 1.0, 1.0).
+
+-define(TOP,    ?GREEN).
+-define(BOTTOM, ?ORANGE).
+-define(FRONT,  ?RED).
+-define(BACK,   ?YELLOW).
+-define(LEFT,   ?BLUE).
+-define(RIGHT,  ?MAGENTA).
+
+color(R, G, B) ->
+    gl:color4f(R, G, B, 1.0).
+
 draw_cube(A) ->
     gl:translatef(0.0, 0.0, -6.0),
     gl:rotatef(A, 1.0, 0.0, 0.0),
     gl:rotatef(A, 0.0, 1.0, 0.0),
+    gl:rotatef(A, 0.0, 0.0, 1.0),
 
     %% Begin drawing the color cube with 6 quads
-    gl:'begin'(?GL_QUADS),
+
     %% Top face (y = 1.0f)
     %% Define vertices in counter-clockwise (CCW) order with normal pointing out
-    gl:color3f(0.0, 1.0, 0.0),     %% Green
+    color(?TOP),
+    gl:'begin'(?GL_QUADS),
     gl:vertex3f(1.0, 1.0, -1.0),
     gl:vertex3f(-1.0, 1.0, -1.0),
     gl:vertex3f(-1.0, 1.0, 1.0),
     gl:vertex3f(1.0, 1.0, 1.0),
+    gl:'end'(),
 
     %% Bottom face (y = -1.0)
-    gl:color3f(1.0, 0.5, 0.0),     %% Orange
+    color(?BOTTOM),
+    gl:'begin'(?GL_QUADS),
     gl:vertex3f(1.0, -1.0, 1.0),
     gl:vertex3f(-1.0, -1.0, 1.0),
     gl:vertex3f(-1.0, -1.0, -1.0),
     gl:vertex3f(1.0, -1.0, -1.0),
+    gl:'end'(),
 
     %% Front face  (z = 1.0)
-    gl:color3f(1.0, 0.0, 0.0),     %% Red
+    color(?FRONT),
+    gl:'begin'(?GL_QUADS),
     gl:vertex3f(1.0, 1.0, 1.0),
     gl:vertex3f(-1.0, 1.0, 1.0),
     gl:vertex3f(-1.0, -1.0, 1.0),
     gl:vertex3f(1.0, -1.0, 1.0),
+    gl:'end'(),
 
     %% Back face (z = -1.0)
-    gl:color3f(1.0, 1.0, 0.0),     %% Yellow
+    color(?BACK),
+    gl:'begin'(?GL_QUADS),
     gl:vertex3f(1.0, -1.0, -1.0),
     gl:vertex3f(-1.0, -1.0, -1.0),
     gl:vertex3f(-1.0, 1.0, -1.0),
     gl:vertex3f(1.0, 1.0, -1.0),
+    gl:'end'(),
 
     %% Left face (x = -1.0)
-    gl:color3f(0.0, 0.0, 1.0),     %% Blue
+    color(?LEFT),
+    gl:'begin'(?GL_QUADS),
     gl:vertex3f(-1.0, 1.0, 1.0),
     gl:vertex3f(-1.0, 1.0, -1.0),
     gl:vertex3f(-1.0, -1.0, -1.0),
     gl:vertex3f(-1.0, -1.0, 1.0),
+    gl:'end'(),
 
     %% Right face (x = 1.0)
-    gl:color3f(1.0, 0.0, 1.0),     %% Magenta
+    color(?RIGHT),
+    gl:'begin'(?GL_QUADS),
     gl:vertex3f(1.0, 1.0, -1.0),
     gl:vertex3f(1.0, 1.0, 1.0),
     gl:vertex3f(1.0, -1.0, 1.0),
     gl:vertex3f(1.0, -1.0, -1.0),
-    gl:'end'(),  %% End of drawing color-cube
+    gl:'end'(),
 
-    %% gl:flush(),
-    gl:finish(),
+    gl:flush(),
+    %% gl:finish(),
     ok.
 
 setup_screen(W, H) ->
     gl:viewport(0,0,2*W,H),
     gl:clearColor(0.5, 0.5, 0.5, 1.0),
     gl:clear(?GL_COLOR_BUFFER_BIT bor ?GL_DEPTH_BUFFER_BIT),
+    gl:disable(?GL_DEPTH_TEST),
     gl:loadIdentity(),
     gl:scalef(2.0, 2.0, 1.0).
 
@@ -272,11 +321,37 @@ draw_screen0(_TL, _TR) ->
     gl:'end'(),
     gl:finish().
 
+seqf(F, T, Inc) when F =< T ->
+    [F|seqf(F+Inc, T, Inc)];
+seqf(F, T, _Inc) when F > T -> [].
+
+
 %% draw two textures TL and TR on screen
 draw_screen(TL, TR) ->
-    gl:enable(?GL_TEXTURE_RECTANGLE_ARB), %% _EXT enable texturing
-    gl:enable(?GL_TEXTURE_2D),
+    gl:texEnvi(?GL_TEXTURE_ENV,?GL_TEXTURE_ENV_MODE,?GL_REPLACE),
+
+
+    gl:'begin'(?GL_LINES),
+    color(?WHITE),
+    lists:foreach(
+      fun(Y) ->
+	      gl:vertex2f(1.0, Y), gl:vertex2f(-1.0, Y)
+      end, seqf(-1.0, 1.0, 0.1)),
+
+    lists:foreach(
+      fun(X) ->
+	      gl:vertex2f(X, 1.0), gl:vertex2f(X, -1.0)
+      end, seqf(-1.0, 1.0, 0.1)),
+
+    gl:'end'(),
+
+    gl:enable(?GL_BLEND),
+    gl:blendFunc(?GL_SRC_ALPHA, ?GL_ONE_MINUS_SRC_ALPHA),
+
+
     gl:bindTexture(?GL_TEXTURE_2D, TL),
+    gl:enable(?GL_TEXTURE_2D),
+
     gl:'begin'(?GL_QUADS),
     gl:texCoord2f(0.0, 0.0), gl:vertex2f(-1.0, -1.0),
     gl:texCoord2f(1.0, 0.0), gl:vertex2f(0.0, -1.0),
@@ -294,9 +369,8 @@ draw_screen(TL, TR) ->
     gl:'end'(),
     gl:disable(?GL_TEXTURE_2D),
     gl:bindTexture(?GL_TEXTURE_2D, 0),
-    gl:disable(?GL_TEXTURE_RECTANGLE_ARB), %% EXT);
-    %% gl:flush().
-    gl:finish().
+    gl:flush().
+    %% gl:finish().
 
 create_texture(W, H, {R,G,B}) ->
     Pixel = <<(trunc(R*255)),(trunc(G*255)),(trunc(B*255)),255>>,
