@@ -7,11 +7,23 @@
 
 -module(tiltfive_wx).
 
--export([test/0]).
+%%
+%% Calls from tiltfive_test
+%% 
+-export([init/1]).
+-export([terminate/1]).
+-export([pose/2]).
+-export([run/1]).
+-export([handle_event/2]).
+
+%% Test start
+-export([start/0]).
+
 
 -include_lib("wx/include/wx.hrl"). 
 -include_lib("wx/include/gl.hrl"). 
 %% -include_lib("epx/include/epx_image.hrl").
+-include("../include/tiltfive.hrl").
 
 -define(TEST, true).
 -define(WIDTH,  512).
@@ -22,18 +34,171 @@
 	 id,
 	 framebuffer,
 	 texture, 
-	 color, 
 	 png
 	}).
 
-test() ->
+-record(transform,
+	{
+	 position :: vecf:vec4f(),
+	 orientation :: quatf:quatf(),
+	 scale :: vecf:vec4f()
+	}).
+-type transform() :: #transform{}.
+
+-type glasses_state() :: #{ wx => wx:wx_object(),
+			    frame => wx:wx_object(),
+			    canvas => wx:wx_object(),
+			    context => wx:wx_object(),
+			    framebuffers => [gl:gl_object()],
+			    textures => [gl:gl_object()],
+			    angle1 => float(),
+			    step1 => float(),
+			    angle2 => float(),
+			    step2 => float(),
+			    transform => transform()
+			  }.
+
+radians(Deg) -> Deg * math:pi() / 180.0.
+
+init(GSt) ->
+    io:format("tiltfive_wx:init: ~p~n", [GSt]),
+    %% IPD = GetIpd
+    %% left = -IPD / 2.0
+    %% right = IPD / 2.0
+    %% #{ width := W, height := H } = GSt,
+    Transfrom = #transform { position = vecf:new(0,0,0),
+			     orientation = quatf:new(1,0,0,0),
+			     scale = vecf:new(1,1,1) },
+    GSt1 = wx_init(GSt),
+    GSt1#{ angle1 => 45.0, step1 => 2.0, 
+	   angle2 => 45.0, step2 => -2.0,
+	   transform => Transfrom }.
+
+terminate(GSt) ->
+    io:format("tiltfive_wx:terminate: ~p~n", [GSt]),
+    ok.
+%%
+%% Glasses pose updated
+%% 
+-spec pose(GSt::glasses_state(), Pose::t5_glasses_pose()) -> 
+	  glasses_state().
+pose(GSt, Pose) ->
+    io:format("tiltfive_wx:pose: ~p pose=~p~n", [GSt,Pose]),
+    %% Here we should update the glasses pose transformation
+    Position = Pose#t5_glasses_pose.posGLS_GBD,
+    Orientation = Pose#t5_glasses_pose.rotToGLS_GBD,
+
+    GSt#{ position => Position, orientation => Orientation }.
+
+
+	%% const float ratio = defaultWidth / (float)defaultHeight;
+
+	%% // Rotate cube
+	%% GLApp::Transform modelTran;
+	%% modelTran.SetEuler(0, 0, (float)glfwGetTime());
+	%% modelTran.SetScale(0.1f);
+
+	%% // Model to world
+	%% auto modelMat = modelTran.MatrixToParentFrame();
+	%% // World to eye
+	%% auto viewLeftMat = leftEyePose.MatrixToLocalFrame() * headPose.MatrixToLocalFrame() * gameboardPose.MatrixToLocalFrame();
+	%% auto viewRightMat = rightEyePose.MatrixToLocalFrame() * headPose.MatrixToLocalFrame() * gameboardPose.MatrixToLocalFrame();
+	%% // Perspective projection
+	%% auto perspectiveProj = glm::perspective(glm::radians(defaultFOV), ratio, 0.1f, 100.0f);
+
+	%% cubeShader->Use();
+	%% cubeVertexArrays->Bind();
+
+
+	%% // Render left eye
+	%% auto mvpLeft = perspectiveProj * viewLeftMat * modelMat;
+
+	%% // Render right eye
+	%% auto mvpRight = perspectiveProj * viewRightMat * modelMat;
+
+	%% int width = 0;
+	%% int height = 0;
+	%% GetFramebufferSize(width, height);
+	%% if(useMultiview) {
+	%% 	glm::highp_mat4 mvpArr[2];
+	%% 	mvpArr[0] = mvpLeft;
+	%% 	mvpArr[1] = mvpRight;
+
+	%% 	cubeShader->Set("MVP", mvpArr);
+	%% 	stereoEyeDisplay.BeginDraw();
+	%% 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	%% 	glDrawArrays(GL_TRIANGLES, 0, 36);
+	%% 	stereoEyeDisplay.EndDraw();
+
+	%% 	leftEyeDisplay.BlitFromFrameBuffer(*leftLayerFramebuffer);
+	%% 	rightEyeDisplay.BlitFromFrameBuffer(*rightLayerFramebuffer);
+
+	%% 	rightEyeDisplay.BlitToScreen(width, height);
+	%% }
+	%% else {
+	%% 	cubeShader->Set("MVP", mvpLeft);
+	%% 	leftEyeDisplay.BeginDraw();
+	%% 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	%% 	glDrawArrays(GL_TRIANGLES, 0, 36);
+	%% 	leftEyeDisplay.EndDraw();
+
+	%% 	cubeShader->Set("MVP", mvpRight);
+	%% 	rightEyeDisplay.BeginDraw();
+	%% 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	%% 	glDrawArrays(GL_TRIANGLES, 0, 36);
+	%% 	rightEyeDisplay.EndDraw();
+
+	%% 	// Blit right eye to display
+	%% 	rightEyeDisplay.BlitToScreen(width, height);
+	%% }
+
+
+%%
+%% Handle events like wand button press etc
+%%
+-spec handle_event(GSt::glasses_state(), 
+		   Event::t5_wand_stream_event()) -> 
+	  glasses_state().
+handle_event(GSt, Event) ->
+    io:format("tiltfive_wx:handle_event: ~p event=~p~n", [GSt,Event]),
+    GSt.
+
+run(GSt) ->
+    %% io:format("tiltfive_wx:run: ~p~n", [GSt]),
+    #{ width := W, height := H,
+       canvas := Canvas, context := Context,  
+       framebuffers := [L,R], textures := [Tl,Tr],
+       angle1 := A1, step1 := Step1,
+       angle2 := A2, step2 := Step2 } = GSt,
+    true = wxGLCanvas:setCurrent(Canvas, Context),
+
+    Cube1 = #cube{id=left,framebuffer=L,texture=Tl},
+    render_cube(Cube1, A1, W, H),
+    Cube2 = #cube{id=right,framebuffer=R,texture=Tr},
+    render_cube(Cube2, A1, W, H),
+
+    setup_screen(W, H),
+    draw_screen(Cube1#cube.texture, Cube2#cube.texture),
+    wxGLCanvas:swapBuffers(Canvas),
+
+    GSt#{ angle1 => math:fmod(A1+Step1, 360.0),
+	  angle2 => math:fmod(A2+Step2, 360.0) }.
+    
+%%
+%% Setup wx frame and glcanvas
+%% prepare for stereo rendering
+%%
+wx_init(GSt) ->
     wxe_master:start(false),
     wxe_master:init_opengl(),
     Wx = wx:new(),
     
-    Frame = wxFrame:new(Wx, ?wxID_ANY, "Tilt", [{size,{2*?WIDTH,?HEIGHT}}]),
+    #{ width := W, height := H } = GSt,
+    Name = maps:get(display_name, GSt, "Tilt"),
+    Frame = wxFrame:new(Wx, ?wxID_ANY, Name, [{size,{2*W,H}}]),
 
     GLAttrib = [{attribList, [
+			      ?WX_GL_CORE_PROFILE,
 			      ?WX_GL_RGBA,
 			      ?WX_GL_DOUBLEBUFFER,
 			      ?WX_GL_MIN_RED,8,
@@ -42,43 +207,40 @@ test() ->
 			      ?WX_GL_DEPTH_SIZE,24,
 			      0]}],
     Canvas = wxGLCanvas:new(Frame, GLAttrib),
-
-    ok = wxGLCanvas:setSize(Canvas, 2*?WIDTH, ?HEIGHT),
+    ok = wxGLCanvas:setSize(Canvas, 2*W, H),
     Context = wxGLContext:new(Canvas),
-
     true = wxFrame:show(Frame),
     timer:sleep(1000), %% fixme: wait for show to complete
-
     true = wxGLCanvas:setCurrent(Canvas, Context),
     [L,R] = gl:genFramebuffers(2),
     [Tl,Tr] = gl:genTextures(2),
-    Color1 = {1.0, 0.0, 0.0},
-    Color2 = {0.0, 1.0, 0.0},
+    init_framebuffer(L, Tl, W, H),
+    init_framebuffer(R, Tr, W, H),
+    GSt#{ wx => Wx, frame => Frame, canvas => Canvas, context => Context,
+	  framebuffers => [L,R], textures => [Tl,Tr] }.
 
-    init_framebuffer0(2*?WIDTH, ?HEIGHT),
 
-    init_framebuffer(L, Tl, ?WIDTH, ?HEIGHT),
-    init_framebuffer(R, Tr, ?WIDTH, ?HEIGHT),
+%% Test start
+start() ->
+    W = ?WIDTH,
+    H = ?HEIGHT,
+    GSt = wx_init(#{ width => W, height => H}),
+    #{ canvas := Canvas, framebuffers := [L,R], textures := [Tl,Tr] } = GSt,
 
-    %% gl:enable(?GL_BLEND),
-    %% gl:blendFunc(?GL_SRC_ALPHA, ?GL_ONE_MINUS_SRC_ALPHA),
-    %% gl:drawBuffers([?GL_COLOR_ATTACHMENT0]),
-    %% gl:generateMipmap(?GL_TEXTURE_2D),
-
+    init_framebuffer0(2*W, H),
 
     %% Draw first time 
-
-    Cube1 = #cube{id=left,framebuffer=L,texture=Tl,color=Color1},
+    Cube1 = #cube{id=left,framebuffer=L,texture=Tl},
     A1 = 45.0,
-    render_cube(Cube1, A1, ?WIDTH, ?HEIGHT),
-    %% dump_texture(Cube1, ?WIDTH, ?HEIGHT),
+    render_cube(Cube1, A1, W, H),
+    %% dump_texture(Cube1, W, H)
 
-    Cube2 = #cube{id=right,framebuffer=R,texture=Tr,color=Color2},
+    Cube2 = #cube{id=right,framebuffer=R,texture=Tr},
     A2 = 45.0 + 10.0,
-    render_cube(Cube2, A2, ?WIDTH, ?HEIGHT),
-    %% dump_texture(Cube2, ?WIDTH, ?HEIGHT),
+    render_cube(Cube2, A2, W, H),
+    %% dump_texture(Cube2, W, H)
 
-    setup_screen(?WIDTH, ?HEIGHT),
+    setup_screen(W, H),
     draw_screen(Cube1#cube.texture, Cube2#cube.texture),
 
     wxGLCanvas:swapBuffers(Canvas),
@@ -87,9 +249,10 @@ test() ->
     Step1 = 2.0,
     Step2 = -2.0,
     %% run a loop
-    draw_loop(?WIDTH,?HEIGHT,Frame,Canvas,Cube1,Cube2,A1,A2,Step1,Step2).
+    draw_loop(W,H,GSt,Cube1,Cube2,A1,A2,Step1,Step2).
 
-draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A1, A2, Step1,Step2) ->
+
+draw_loop(W, H, GSt, Cube1, Cube2, A1, A2, Step1,Step2) ->
     A11 = math:fmod(A1+Step1, 360.0),
     A21 = math:fmod(A2+Step2, 360.0),
 
@@ -99,12 +262,12 @@ draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A1, A2, Step1,Step2) ->
     setup_screen(W, H),
     draw_screen(Cube1#cube.texture, Cube2#cube.texture),
 
-    wxGLCanvas:swapBuffers(Canvas),
+    wxGLCanvas:swapBuffers(maps:get(canvas, GSt)),
     timer:sleep(50),
 
-    draw_loop(W, H, Frame, Canvas, Cube1, Cube2, A11, A21, Step1, Step2).
+    draw_loop(W, H, GSt, Cube1, Cube2, A11, A21, Step1, Step2).
 
-init_framebuffer0(W, H) ->
+init_framebuffer0(_W, _H) ->
     gl:bindFramebuffer(?GL_FRAMEBUFFER, 0),
 %%    [C] = gl:genRenderbuffers(1),
 %%    gl:bindRenderbuffer(?GL_RENDERBUFFER, C),
@@ -164,6 +327,7 @@ save_png(Pixels, W, H, Format, Filename) ->
     epx_image:save(Image).
 -endif.
 
+-ifdef(not_used).
 dump_texture(Cube, W, H) ->
     io:format("bump 32 pixels from ~s\n", [Cube#cube.id]),
     gl:bindTexture(?GL_TEXTURE_2D, Cube#cube.texture),
@@ -172,30 +336,17 @@ dump_texture(Cube, W, H) ->
     SubPixels = binary:part(Pixels, 0, 32),
     io:format("Data = ~p\n", [SubPixels]),
     gl:bindTexture(?GL_TEXTURE_2D, 0).
+-endif.
 
 
-render_cube(#cube{id=ID,framebuffer=F, texture=T, color=C, png=Png}, A, W, H) ->
+render_cube(#cube{id=_ID,framebuffer=F, texture=_T, png=_Png}, A, W, H) ->
     gl:bindFramebuffer(?GL_FRAMEBUFFER, F),
-    setup_cube(C, W, H),
+    setup_cube(W, H),
     draw_cube(A),
-    %% set_texture(ID,T,C,W,H),
     %% if Png /= undefined -> save_image(F, W, H, Png); true -> ok end,
     gl:bindFramebuffer(?GL_FRAMEBUFFER, 0).
 
-
-set_texture(ID, T, C={R,G,B}, W, H) ->
-    C1 = case get({ID,color}) of
-	     undefined -> {trunc(R*255),trunc(G*255),trunc(B*255)};
-	     Color -> inc_color(Color, {5,5,5})
-	 end,
-    put({ID,color}, C1),
-    Data = create_texture(W, H, C1),
-    gl:bindTexture(?GL_TEXTURE_2D, T),
-    gl:texImage2D(?GL_TEXTURE_2D, 0, ?GL_RGBA, W, H, 0, ?GL_RGBA, ?GL_UNSIGNED_BYTE, Data),
-    gl:bindTexture(?GL_TEXTURE_2D, 0),
-    ok.
-
-setup_cube({R,G,B}, W, H) ->
+setup_cube(W, H) ->
     gl:clearColor(0.0, 0.0, 0.0, 0.0),  %% totally transparent?
     gl:clear(?GL_COLOR_BUFFER_BIT bor ?GL_DEPTH_BUFFER_BIT),
     gl:enable(?GL_DEPTH_TEST),
@@ -304,6 +455,7 @@ setup_screen(W, H) ->
     gl:scalef(2.0, 2.0, 1.0).
 
 %% draw two colored quads on screen
+-ifdef(not_used).
 draw_screen0(_TL, _TR) ->
     gl:'begin'(?GL_QUADS),
     gl:color3f(1.0, 0.0, 0.0),     %% Red
@@ -320,6 +472,8 @@ draw_screen0(_TL, _TR) ->
     gl:vertex2f(0.0,  1.0),
     gl:'end'(),
     gl:finish().
+-endif.
+
 
 seqf(F, T, Inc) when F =< T ->
     [F|seqf(F+Inc, T, Inc)];
@@ -372,20 +526,9 @@ draw_screen(TL, TR) ->
     gl:flush().
     %% gl:finish().
 
+-ifdef(not_used).
 create_texture(W, H, {R,G,B}) ->
     Pixel = <<(trunc(R*255)),(trunc(G*255)),(trunc(B*255)),255>>,
     iolist_to_binary(lists:duplicate(W*H, Pixel)).
+-endif.
 
-random_color() ->
-    {rand:uniform(256)-1, rand:uniform(256)-1, rand:uniform(256)-1}.
-
-inc_color({R,G,B}, {Ri,Gi,Bi}) ->
-    {if R =:= 0 -> 0; true -> max((R+Ri) rem 256,1) end,
-     if G =:= 0 -> 0; true -> max((G+Gi) rem 256,1) end,
-     if B =:= 0 -> 0; true -> max((B+Bi) rem 256,1) end};
-
-inc_color({R,G,B}, Inc) when is_integer(Inc) ->
-    Color1 = R*256*256 + G*256 + B + Inc,
-    {Color1 bsr 16, (Color1 bsr 8) band 255, Color1 band 255}.
-
-    

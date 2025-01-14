@@ -7,6 +7,12 @@
 
 -ifndef(__TILTFIVE_HRL__).
 
+%%
+-define(T5_MAX_STRING_PARAM_LEN, 260).
+
+-define(T5_MIN_CAM_IMAGE_BUFFER_WIDTH, 768).
+-define(T5_MIN_CAM_IMAGE_BUFFER_HEIGHT, 600).
+
 %% t5_gameboard_type()
 -define(kT5_GameboardType_None, 1).
 -define(kT5_GameboardType_LE, 2).
@@ -33,6 +39,10 @@
 -define(kT5_GraphicsApi_D3D11, 3).
 %% \brief Vulkan
 -define(kT5_GraphicsApi_Vulkan, 4).
+
+%% t5_graphics_api_gl_texture_mode()
+-define(kT5_GraphicsApi_GL_TextureMode_Pair, 1).
+-define(kT5_GraphicsApi_GL_TextureMode_Array, 2).
 
 %% t5_wand_stream_event_type()
 %% \brief Wand connected
@@ -80,10 +90,10 @@
 -type t5_param_sys() :: integer().
 -type t5_gameboard_type() :: integer().
 -type t5_connection_state() :: integer().
--type t5_glasses_pose() :: term().
 -type t5_glasses_pose_usage() :: integer().
 -type t5_graphics_api() :: integer().
-%% -type t5_graphics_context() :: reference().
+-type t5_graphics_context() :: integer().
+
 %% -type t5_image() :: term().
 -type t5_wand_handle() :: reference().
 -type t5_param_glasses() :: integer().
@@ -91,9 +101,11 @@
 -type t5_matrix_order() :: integer().
 -type t5_cartesian_coordinate_handedness() :: term().
 -type t5_wand_stream_event_type() :: integer().
+-type t5_graphics_api_gl_texture_mode() :: integer().
 -type t5_hand() :: integer().
 -type t5_handle() :: term().
 -type uint8_t() :: byte().
+-type uint32_t() :: integer().
 
 -record(t5_gameboard_size,
 	{
@@ -127,6 +139,7 @@
 	 framebufferHeight :: integer()
 	}).
 -type t5_projection_info() :: #t5_projection_info{}.
+
 -record(t5_wand_buttons,
 	{
 	 t5 :: boolean(),
@@ -139,9 +152,30 @@
 	 y :: boolean()
 	}).
 
--type t5_vec2() :: {X::float(), Y::float()}.
--type t5_vec3() :: {X::float(), Y::float(),Z::float()}.
--type t5_quat() :: {W::float(),X::float(), Y::float(),Z::float()}.
+-record(t5_vec2,
+	{
+	 x :: float(),
+	 y :: float()
+	}).
+
+-record(t5_vec3,
+	{
+	 x :: float(),
+	 y :: float(),
+	 z :: float()
+	}).
+
+-record(t5_quat,
+	{
+	 w :: float(),
+	 x :: float(),
+	 y :: float(),
+	 z :: float()
+	}).
+
+-type t5_vec2() :: #t5_vec2{}.
+-type t5_vec3() :: #t5_vec3{}.
+-type t5_quat() :: #t5_quat{}.
 
 -record(t5_wand_report,
 	{
@@ -193,7 +227,7 @@
 	 %% \brief The type of gameboard visible for this pose
 	 gameboardType :: t5_gameboard_type()
 	}).
--type t5_glasses_pos() :: #t5_glasses_pose {}.
+-type t5_glasses_pose() :: #t5_glasses_pose {}.
 
 -record(t5_camera_stream_config,
 	{
@@ -241,5 +275,12 @@
 }).
 -type t5_cam_image() :: #t5_cam_image{}.
 
--endif.
 
+-record(t5_graphics_context_gl,
+	{
+	 textureMode :: t5_graphics_api_gl_texture_mode(),
+	 leftEyeArrayIndex :: uint32_t(),
+	 rightEyeArrayIndex :: uint32_t()
+	}).
+-type t5_graphics_context_gl() :: #t5_graphics_context_gl{}.
+-endif.

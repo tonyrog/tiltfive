@@ -26,13 +26,14 @@
 -export([get_glasses_connection_state/1]).
 -export([get_glasses_identifier/1]).
 -export([get_glasses_pose/2]).
--export([init_glasses_graphics_context/2]).
+-export([init_glasses_graphics_context/3]).
+-export([enqueue_init_glasses_graphics_context/3]).
 -export([send_frame_to_glasses/2]).
 -export([configure_camera_stream_for_glasses/2]).
 -export([get_filled_cam_image_buffer/1]).
 -export([submit_empty_cam_image_buffer/2]).
 -export([cancel_cam_image_buffer/2]).
--export([validate_frameinfo/3]).
+-export([validate_frameinfo/2]).
 -export([get_glasses_integer_param/3]).
 -export([get_glasses_float_param/3]).
 -export([get_glasses_utf8_param/3]).
@@ -42,11 +43,19 @@
 -export([send_impulse/4]).
 -export([configure_wand_stream_for_glasses/2]).
 -export([read_wand_stream_for_glasses/2]).
-	
+
+-export([enqueue_frame_to_glasses/2]).	
+
 %% -compile(export_all).
+-include_lib("wx/src/wxe.hrl").
 -include("../include/tiltfive.hrl").
 
+-define(WXE_DYNCALL, 52).
+
 -define(nif_stub,nif_stub_error(?LINE)).
+
+%% -define(dbg(F,A), io:format((F), (A))).
+-define(dbg(F,A), ok).
 
 init() ->
     ok = erlang:load_nif(
@@ -118,10 +127,24 @@ get_glasses_pose(_Glasses, _Usage) ->
     ?nif_stub.    
 
 -spec init_glasses_graphics_context(Glasses::t5_glasses(),
-				    GraphicsApi::t5_graphics_api()) ->
-	  GraphicsContext::reference().
-init_glasses_graphics_context(_Glasses, _GraphicsApi) ->
+				    GraphicsApi::t5_graphics_api(),
+				    GraphicsContext::t5_graphics_context()
+				   ) -> ok.
+init_glasses_graphics_context(_Glasses, _GraphicsApi, _GraphicsContext) ->
 	?nif_stub.
+
+-spec enqueue_init_glasses_graphics_context(Glasses::t5_glasses(),
+					    GraphicsApi::t5_graphics_api(),
+					    GraphicsContext::t5_graphics_context()
+					   ) -> ok.
+enqueue_init_glasses_graphics_context(Glasses,
+				      GraphicsApi,
+				      GraphicsContext) ->
+    Env = ?get_env(),
+    wxe_util:queue_cmd(init_glasses_graphics_context,
+		       {Glasses,GraphicsApi,GraphicsContext},
+		       tiltfive, glasses, Glasses, Env, ?WXE_DYNCALL),
+    rec(?WXE_DYNCALL).
 
 -spec configure_camera_stream_for_glasses(Glasses::t5_glasses(),
 					  Config::t5_camera_stream_config()) ->
@@ -149,11 +172,21 @@ cancel_cam_image_buffer(_Glasses, _Buffer) ->
 	  ok.
 send_frame_to_glasses(_Glasses, _Info) ->
 	?nif_stub.
-	      
--spec validate_frameinfo(Glasses::t5_glasses(), Info::t5_frame_info(),
-			 Detail::string()) ->
+
+-spec enqueue_frame_to_glasses(Glasses::t5_glasses(), Info::t5_frame_info()) ->
 	  ok.
-validate_frameinfo(_Glasses, _Info, _Detail) ->
+enqueue_frame_to_glasses(Glasses, Info) ->
+    ?dbg("wxe_env = ~p\n", [wx:get_env()]),
+    ?dbg("enqueue_frame_to_glasses: ~p ~p~n", [Glasses, Info]),
+    Env = ?get_env(),
+    ?dbg("MemRef = ~p\n", [Env]),
+    wxe_util:queue_cmd(send_frame_to_glasses, {Glasses, Info},
+		       tiltfive, glasses, Glasses, Env, ?WXE_DYNCALL),
+    rec(?WXE_DYNCALL).
+
+-spec validate_frameinfo(Glasses::t5_glasses(), Info::t5_frame_info())
+			-> ok | {error,Detail::string()}.
+validate_frameinfo(_Glasses, _Info) ->
     ?nif_stub.
 
 -spec get_glasses_integer_param(Glasses::t5_glasses(), 
@@ -212,3 +245,15 @@ configure_wand_stream_for_glasses(_Glasses, _Config) ->
 -spec read_wand_stream_for_glasses(Glasses::t5_glasses(),TimeoutMs::integer()) -> t5_wand_stream_event().
 read_wand_stream_for_glasses(_Glasses, _TimeoutMs) ->
     ?nif_stub.
+
+%% utils
+rec(Op) ->
+    receive
+	{'_wxe_result_', Res} -> Res;
+	{'_wxe_error_', Op, MFA, Error} ->
+	    erlang:error({Error, MFA});
+	{'_wxe_error_', Op, {M,F,A}, Error} ->
+	    Msg = io_lib:format("~p in ~w:~w/~w", [Error, M, F, A]),
+	    wxe_master ! {wxe_driver, error, Msg},
+	    rec(Op)
+    end.

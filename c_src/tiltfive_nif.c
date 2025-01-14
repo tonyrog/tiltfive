@@ -19,7 +19,7 @@
 #define PARAM_GLASSES_NUMBER   256
 #define DETAIL_BUFfER_SIZE     1024
 
-#define DEBUG
+// #define DEBUG
 // #define NIF_TRACE
 
 // Dirty optional since 2.7 and mandatory since 2.12
@@ -70,13 +70,13 @@
     NIF("get_glasses_connection_state",1,tiltfive_get_glasses_connection_state) \
     NIF("get_glasses_identifier",1,tiltfive_get_glasses_identifier) \
     NIF("get_glasses_pose",2,tiltfive_get_glasses_pose) \
-    NIF("init_glasses_graphics_context",2,tiltfive_init_glasses_graphics_context) \
+    NIF("init_glasses_graphics_context",3,tiltfive_init_glasses_graphics_context) \
     NIF("send_frame_to_glasses",2,tiltfive_send_frame_to_glasses) \
     NIF("configure_camera_stream_for_glasses",2,tiltfive_configure_camera_stream_for_glasses) \
     NIF("get_filled_cam_image_buffer",1,tiltfive_get_filled_cam_image_buffer) \
     NIF("submit_empty_cam_image_buffer",2,tiltfive_submit_empty_cam_image_buffer) \
     NIF("cancel_cam_image_buffer",2,tiltfive_cancel_cam_image_buffer) \
-    NIF("validate_frameinfo",3,tiltfive_validate_frameinfo) \
+    NIF("validate_frameinfo",2,tiltfive_validate_frameinfo) \
     NIF("get_glasses_integer_param",3,tiltfive_get_glasses_integer_param) \
     NIF("get_glasses_float_param",3,tiltfive_get_glasses_float_param) \
     NIF("get_glasses_utf8_param",3,tiltfive_get_glasses_utf8_param) \
@@ -94,6 +94,14 @@ typedef struct
     void* platformContext;
 } nif_ctx_t;
 
+// THIS need to be shared between tiltfive and wx! how?
+typedef struct
+{
+    int argc;
+    const ERL_NIF_TERM* argv;
+    ERL_NIF_TERM result;
+} dyncallarg_t;
+
 typedef struct
 {
     T5_Glasses glasses;
@@ -102,6 +110,7 @@ typedef struct
 DECL_ATOM(ok);
 DECL_ATOM(error);
 DECL_ATOM(unknown);
+DECL_ATOM(null);
 DECL_ATOM(true);
 DECL_ATOM(false);
 DECL_ATOM(arg0);
@@ -125,6 +134,7 @@ DECL_ATOM(t5_cam_image);
 DECL_ATOM(t5_frame_info);
 DECL_ATOM(t5_camera_stream_config);
 DECL_ATOM(t5_wand_stream_config);
+DECL_ATOM(t5_graphics_context_gl);
 DECL_ATOM(vci);
 
 // error codes
@@ -157,6 +167,9 @@ DECL_ATOM(service_incompatible);
 DECL_ATOM(permission_denied);
 DECL_ATOM(invalid_buffer_size);
 DECL_ATOM(invalid_geometry);
+// dyncall
+DECL_ATOM(send_frame_to_glasses);
+DECL_ATOM(init_glasses_graphics_context);
 
 ErlNifResourceType *glasses_r;
 
@@ -507,7 +520,7 @@ static int get_t5_frame_info(ErlNifEnv* env, ERL_NIF_TERM arg, T5_FrameInfo* inf
 	return 0;
     if (!get_boolean(env, elem[6], &info->isUpsideDown))
 	return 0;
-    if (!enif_get_tuple(env, elem[7], &arity, &elem_vci) || (arity != 4))
+    if (!enif_get_tuple(env, elem[7], &arity, &elem_vci) || (arity != 5))
 	return 0;
     if (elem_vci[0] != ATOM(vci))
 	return 0;
@@ -777,18 +790,54 @@ static ERL_NIF_TERM tiltfive_init_glasses_graphics_context(ErlNifEnv* env, int a
 {
     tiltfive_glasses_t* gp;
     T5_Result err;
-    int graphicsApi;
-    uintptr_t graphicsContext;
-	
+    unsigned int graphicsApi;
+    union {
+	T5_GraphicsContextGL gl;
+	T5_GraphicsContextVulkan vk;
+    } graphicsContext;
+    void* graphicsContext_ptr;
+    uint64_t graphicsContext_u64;
+    const ERL_NIF_TERM* elem;
+    int arity;    
+    int maybe_record;
+    
     if (!enif_get_resource(env, argv[0], glasses_r, (void**)&gp))
 	return enif_raise_exception(env, ATOM(arg0));
-    if (!enif_get_int(env, argv[1], &graphicsApi))
+    if (!enif_get_uint(env, argv[1], &graphicsApi))
 	return enif_raise_exception(env, ATOM(arg1));
-    if (!enif_get_uint64(env, argv[2], &graphicsContext))
+    maybe_record = enif_get_tuple(env, argv[2], &arity, &elem);
+    if (maybe_record && (arity == 4) &&
+	(elem[0] == ATOM(t5_graphics_context_gl))) {
+	unsigned int texturemode;
+	unsigned int left;
+	unsigned int right;
+
+	if (!enif_get_uint(env, elem[1], &texturemode))
+	    return enif_raise_exception(env, ATOM(arg2));
+	if (!enif_get_uint(env, elem[2], &left))
+	    return enif_raise_exception(env, ATOM(arg2));
+	if (!enif_get_uint(env, elem[3], &right))
+	    return enif_raise_exception(env, ATOM(arg2));
+	graphicsContext.gl.textureMode =
+	    (T5_GraphicsApi_GL_TextureMode) texturemode;
+	graphicsContext.gl.leftEyeArrayIndex = left;
+	graphicsContext.gl.rightEyeArrayIndex = right;
+	graphicsContext_ptr = (void*) &graphicsContext;
+    }
+    else if (argv[2] == ATOM(null))
+	graphicsContext_ptr = NULL;
+    else if (enif_get_uint64(env, argv[2], &graphicsContext_u64)) {
+	if (graphicsContext_u64 == 0)
+	    graphicsContext_ptr = NULL;
+	else
+	    return enif_raise_exception(env, ATOM(arg2));
+    }
+    else
 	return enif_raise_exception(env, ATOM(arg2));
+    
     if ((err = t5InitGlassesGraphicsContext(gp->glasses,
 					    (T5_GraphicsApi) graphicsApi,
-					    (void*) graphicsContext)) != T5_SUCCESS)
+					    graphicsContext_ptr)) != T5_SUCCESS)
 	return make_error(env, err);
     return ATOM(ok);
 }
@@ -898,7 +947,8 @@ static ERL_NIF_TERM tiltfive_validate_frameinfo(ErlNifEnv* env, int argc, const 
     case T5_ERROR_OVERFLOW: // buffer too small (FIXME resize and retry)
 	break;
     }
-    return enif_make_string_len(env, detail, detailSize-1, ERL_NIF_LATIN1);
+    return enif_make_tuple2(env, ATOM(error),
+			    enif_make_string_len(env, detail, detailSize-1, ERL_NIF_LATIN1));
 }
 
 static ERL_NIF_TERM tiltfive_get_glasses_integer_param(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
@@ -1097,6 +1147,7 @@ static ERL_NIF_TERM tiltfive_configure_wand_stream_for_glasses(ErlNifEnv* env, i
     return ATOM(ok);
 }
 
+// FIXME: this is a blocking call, should be run in a separate thread. dirty?
 static ERL_NIF_TERM tiltfive_read_wand_stream_for_glasses(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 {
     tiltfive_glasses_t* gp;
@@ -1183,7 +1234,8 @@ static int load_atoms(ErlNifEnv* env)
 {
     LOAD_ATOM(ok);
     LOAD_ATOM(error);
-    LOAD_ATOM(unknown);    
+    LOAD_ATOM(unknown);
+    LOAD_ATOM(null);
     LOAD_ATOM(true);
     LOAD_ATOM(false);
     LOAD_ATOM(arg0);
@@ -1205,8 +1257,10 @@ static int load_atoms(ErlNifEnv* env)
     LOAD_ATOM(t5_wand_stream_event);
     LOAD_ATOM(t5_projection_info);
     LOAD_ATOM(t5_cam_image);
+    LOAD_ATOM(t5_frame_info);
     LOAD_ATOM(t5_camera_stream_config);
     LOAD_ATOM(t5_wand_stream_config);
+    LOAD_ATOM(t5_graphics_context_gl);
     LOAD_ATOM(vci);
 
     // error codes
@@ -1239,7 +1293,9 @@ static int load_atoms(ErlNifEnv* env)
     LOAD_ATOM(permission_denied);
     LOAD_ATOM(invalid_buffer_size);
     LOAD_ATOM(invalid_geometry);
-    
+    // dyncall
+    LOAD_ATOM(send_frame_to_glasses);
+    LOAD_ATOM(init_glasses_graphics_context);
     return 0;
 }
 
@@ -1248,6 +1304,31 @@ static void glasses_dtor(ErlNifEnv *env, tiltfive_glasses_t* obj)
     // nif_ctx_t* ctx = (nif_ctx_t*) enif_priv_data(env);
     t5DestroyGlasses(&obj->glasses);
 }
+
+// execute nif from other thread (wx)
+static void glasses_dyncall(ErlNifEnv* caller_env, void* obj, void* call_data)
+{
+    dyncallarg_t* dap = (dyncallarg_t*) call_data;
+    const ERL_NIF_TERM* argv2;
+    int argc2;
+    
+    DEBUGF("glasses_dyncall %T %T", dap->argv[0], dap->argv[1]);
+
+    if (!enif_get_tuple(caller_env, dap->argv[1], &argc2, &argv2)) {
+	dap->result = ATOM(error);
+	return;
+    }
+    
+    if (dap->argv[0] == ATOM(send_frame_to_glasses)) {
+	dap->result = tiltfive_send_frame_to_glasses(caller_env, argc2, argv2);
+    }
+    else if (dap->argv[0] == ATOM(init_glasses_graphics_context)) {
+	dap->result = tiltfive_init_glasses_graphics_context(caller_env,
+							     argc2, argv2);
+    }
+    DEBUGF("return %T = %T", dap->argv[0], dap->result);
+}
+
 
 static int tilefive_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_info)
 {
@@ -1262,16 +1343,15 @@ static int tilefive_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_inf
     g_init.dtor = (ErlNifResourceDtor*) glasses_dtor;
     g_init.stop = (ErlNifResourceStop*) NULL;
     g_init.down = (ErlNifResourceDown*) NULL;
-    g_init.members = 3;
-    g_init.dyncall = NULL;
+    g_init.members = 4;
+    g_init.dyncall = (ErlNifResourceDynCall*) glasses_dyncall;
 
     if ((glasses_r =
-	 enif_open_resource_type_x(env,
-				   "glasses",
-				   &g_init,
-				   ERL_NIF_RT_CREATE |
-				   ERL_NIF_RT_TAKEOVER,
-				   &tried)) == NULL) {
+	 enif_init_resource_type(env,
+				 "glasses",
+				 &g_init,
+				 ERL_NIF_RT_CREATE, // | ERL_NIF_RT_TAKEOVER,
+				 &tried)) == NULL) {
 	return -1;
     }
 
@@ -1310,16 +1390,15 @@ static int tilefive_upgrade(ErlNifEnv* env, void** priv_data,
     g_init.dtor = (ErlNifResourceDtor*) glasses_dtor;
     g_init.stop = (ErlNifResourceStop*) NULL;
     g_init.down = (ErlNifResourceDown*) NULL;
-    g_init.members = 3;
-    g_init.dyncall = NULL;
+    g_init.members = 4;
+    g_init.dyncall = (ErlNifResourceDynCall*) glasses_dyncall;
 
     if ((glasses_r =
-	 enif_open_resource_type_x(env,
-				   "glasses",
-				   &g_init,
-				   ERL_NIF_RT_CREATE |
-				   ERL_NIF_RT_TAKEOVER,
-				   &tried)) == NULL) {
+	 enif_init_resource_type(env,
+				 "glasses",
+				 &g_init,
+				 ERL_NIF_RT_CREATE, // | ERL_NIF_RT_TAKEOVER,
+				 &tried)) == NULL) {
 	return -1;
     }
 
