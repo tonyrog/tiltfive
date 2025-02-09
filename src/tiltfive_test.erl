@@ -83,7 +83,9 @@ start_glasses(_St, [], Map) -> Map;
 start_glasses(St, [ID|Added], Map) ->
     Si = select_scheduler(Map),
     {Pid,Mon} = spawn_opt(fun() ->
-				  init_glasses(St#{ glasses_id => ID})
+				  init_glasses(St#{ 
+						    glasses_id => ID
+ 						  })
 			  end, [monitor, {scheduler, Si}]),
     Map1 = Map#{ ID => {Pid,Mon}, Mon => Pid, Pid => ID },
     start_glasses(St, Added, Map1).
@@ -122,7 +124,6 @@ get_glasses_params(GlassesRef) ->
 
 
 init_glasses(GSt=#{ glasses_id := ID}) ->
-
     case tiltfive:create_glasses(ID) of
 	GlassesRef when is_reference(GlassesRef) ->
 	    Params = get_glasses_params(GlassesRef),

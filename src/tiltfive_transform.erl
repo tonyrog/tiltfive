@@ -18,69 +18,91 @@
 	 matrix_to_local_frame/1,
 	 matrix_to_parent_frame/1
 	]).
+-export([mul3/3]).
 
 -include("transform.hrl").
 
-new() ->
-    #transform{position = vecf:new(0,0,0),
-	       orientation = quatf:new(1,0,0,0), %% x-vector 0 degrees
-	       scale = vecf:new(1,1,1)}.
+%% "missing" utils
+e3d_vec_invert({X,Y,Z}) ->
+    {1/X,1/Y,1/Z}.
 
-set_position(T, Pos) ->
+e3d_vec_mul({X1,Y1,Z1}, {X2,Y2,Z2}) ->
+    {X1*X2,Y1*Y2,Z1*Z2}.
+
+e3d_vec_div({X1,Y1,Z1}, {X2,Y2,Z2}) ->
+    {X1/X2,Y1/Y2,Z1/Z2}.
+
+
+new() ->
+    #transform{position = e3d_vec:zero(),
+	       orientation = e3d_q:identity(),
+	       scale = {1.0,1.0,1.0}
+	       }.
+
+set_position(T, Pos) when tuple_size(Pos) =:= 3 ->
     T#transform{position = Pos}.
-set_position(T, X, Y, Z) ->
-    T#transform{position = vecf:new(X,Y,Z)}.
+set_position(T, X, Y, Z) when is_float(X), is_float(Y), is_float(Z) ->
+    T#transform{position = {X,Y,Z}}.
 
 position(T) ->
     T#transform.position.
 
-set_orientation(T, Q) ->
+set_orientation(T, Q) when tuple_size(Q) =:= 2 ->
     T#transform{orientation = Q}.
 
 orientation(T) ->
     T#transform.orientation.
 
-set_scale(T, Scale) ->
-    T#transform{scale = vecf:new(Scale, Scale, Scale)}.
+set_scale(T, Scale) when is_float(Scale) ->
+    T#transform{scale = {Scale, Scale, Scale}}.
 
 scale(T) ->
     T#transform.scale.
 
+%% angle in radians
 -spec set_angle_axix(T::transform(), Angle::number(), Axis::vecf()) -> 
 	  transform().
-set_angle_axix(T, Angle, Axis) ->
-    T#transform{ orientation = vecf:new(Axis, Angle) }.
+set_angle_axix(T, Angle, Axis) when is_float(Angle), tuple_size(Axis) =:= 3 ->
+    T#transform{ orientation = e3d_q:from_angle_axis_rad(Angle, Axis) }.
 
 -spec set_euler(T::transform(), EulerAngles::vecf()) ->
 	  transform().
-set_euler(T, EulerAngles) ->
-    T#transform { orientation = quatf:from_euler(EulerAngles) }.
-
+set_euler(T, EulerAngles) when tuple_size(EulerAngles) =:= 3 ->
+    T#transform { orientation = e3d_q:from_euler_rad(EulerAngles) }.
 
 -spec set_euler(T::transform(), X::number(), Y::number(), Z::number()) ->
 	  transform().
 set_euler(T, R, P, Y) when is_number(R), is_number(P), is_number(Y) ->
-    T#transform{ orientation = quatf:from_euler(R,P,Y) }.
-    
+    T#transform{ orientation = e3d_q:from_euler_rad(R,P,Y) }.
+
+-spec point_to_local_frame(T::transform(), P::vecf()) -> vecf().
 point_to_local_frame(T, P) ->
-    L1 = vecf:subtract(P, T#transform.position),
-    L2 = vecf:divide(L1, T#transform.scale),
-    quatf:rotate(T#transform.orientation, L2).
+    L1 = e3d_vec:sub(P, T#transform.position),
+    L2 = e3d_vec_div(L1, T#transform.scale),
+    e3d_q:vec_rotate(L2, T#transform.orientation).
 
+-spec point_to_parent_frame(T::transform(), P::vecf()) -> vecf().
 point_to_parent_frame(T, P) ->
-    P1 = quatf:rotate(quatf:inverse(T#transform.orientation), P),
-    P2 = vecf:multiply(P1, T#transform.scale),
-    vecf:add(T#transform.position, P2).
+    P1 = e3d_q:vec_rotate(P, e3d_q:inverse(T#transform.orientation)),
+    P2 = e3d_vec_mul(P1, T#transform.scale),
+    e3d_vec:add(T#transform.position, P2).
 
+mul3(A,B,C) ->
+    e3d_mat:mul(e3d_mat:mul(A,B),C).
+
+-spec matrix_to_local_frame(T::transform()) -> matf().
 matrix_to_local_frame(T) ->
-    M0 = matf:translate(vecf:negate(T#transform.position)),
-    M1 = matf:multiply(matf:scale(vecf:divide(1,T#transform.scale)), M0),
-    M2 = matf:multiply(matf:from_quat(T#transform.orientation), M1),
-    M2.
+    M0 = e3d_mat:translate(e3d_vec:neg(T#transform.position)),
+    M1 = e3d_mat:scale(e3d_vec_invert(T#transform.scale)),
+    M2 = e3d_q:to_rotation_matrix(T#transform.orientation),
+    mul3(M0, M1, M2).
 
+
+-spec matrix_to_parent_frame(T::transform()) -> matf().
 matrix_to_parent_frame(T) ->
-    M2 = matf:from_quat(quatf:inverse(T#transform.orientation)),
-    M1 = matf:multiply(matf:scale(T#transform.scale), M2),
-    M0 = matf:multiply(matf:translate(T#transform.position), M1),
-    M0.
-    
+    M2 = e3d_q:to_rotation_matrix(e3d_q:inverse(T#transform.orientation)),
+    M1 = e3d_mat:scale(T#transform.scale),
+    M0 = e3d_mat:translate(T#transform.position),
+    mul3(M0, M1, M2).
+
+

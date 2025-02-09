@@ -1,15 +1,15 @@
 -ifndef(TRANSFORM_HRL).
 -define(TRANSFORM_HRL, true).
 
--type vecf() :: vecf:vec4f().
--type matf() :: matf:mat44f().
--type quatf() :: vecf:vec4f().
+-type vecf() :: e3d_vec:vector().
+-type matf() :: e3d_mat:matrix().
+-type quatf() :: {vecf(), float()}.
 
 -record(transform, 
 	{
-	 position = vecf:new(0,0,0) :: vecf(),
-	 orientation = quatf:new(1,0,0,0) :: quatf(),
-	 scale = vecf:new(1,1,1) :: vecf()
+	 position = e3d_vec:zero() :: vecf(),
+	 orientation = e3d_q:identity() :: quatf(),
+	 scale = {1.0,1.0,1.0} :: vecf()
 	}).
 -type transform() :: #transform{}.
 

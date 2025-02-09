@@ -29,21 +29,21 @@
 -define(WIDTH,  512).
 -define(HEIGHT, 512).
 
+-define(defaultWidth, 1216).
+-define(defaultHeight, 768).
+-define(defaultFOV, 48.0).
+-define(radians(Deg), (((Deg)*math:pi()) / 180.0)).
+
+-include("transform.hrl").
+
 -record(cube, 
 	{
 	 id,
 	 framebuffer,
 	 texture, 
-	 png
+	 png,
+	 mvp
 	}).
-
--record(transform,
-	{
-	 position :: vecf:vec4f(),
-	 orientation :: quatf:quatf(),
-	 scale :: vecf:vec4f()
-	}).
--type transform() :: #transform{}.
 
 -type glasses_state() :: #{ wx => wx:wx_object(),
 			    frame => wx:wx_object(),
@@ -58,21 +58,33 @@
 			    transform => transform()
 			  }.
 
-radians(Deg) -> Deg * math:pi() / 180.0.
+t5_vec_to_vecf(#t5_vec3{x=X,y=Y,z=Z}) ->
+    {X,Y,Z}.
 
-init(GSt) ->
+t5_quat_to_quatf(#t5_quat{w=W,x=X,y=Y,z=Z}) ->
+    {{X,Y,Z}, W}.
+
+
+init(GSt = #{ glasses_ref := Glasses }) ->
     io:format("tiltfive_wx:init: ~p~n", [GSt]),
-    %% IPD = GetIpd
-    %% left = -IPD / 2.0
-    %% right = IPD / 2.0
-    %% #{ width := W, height := H } = GSt,
-    Transfrom = #transform { position = vecf:new(0,0,0),
-			     orientation = quatf:new(1,0,0,0),
-			     scale = vecf:new(1,1,1) },
+    IPD = tiltfive:get_glasses_float_param(Glasses,0,
+					   ?kT5_ParamGlasses_Float_IPD),
+    GameboardPose = tiltfive_transform:new(),
+    HeadPose = tiltfive_transform:new(),
+    LeftEyePose = tiltfive_transform:set_position(
+		    tiltfive_transform:new(), -IPD/2.0, 0.0, 0.0),
+    RightEyePose = tiltfive_transform:set_position(
+		     tiltfive_transform:new(), IPD/2.0, 0.0, 0.0),
     GSt1 = wx_init(GSt),
-    GSt1#{ angle1 => 45.0, step1 => 2.0, 
+    GSt1#{ start_time => erlang:system_time(micro_seconds),
+	   angle1 => 45.0, step1 => 2.0,
 	   angle2 => 45.0, step2 => -2.0,
-	   transform => Transfrom }.
+	   %% transforms needed for view matrix
+	   gameboardPose => GameboardPose,
+	   headPose => HeadPose,
+	   leftEyePose => LeftEyePose, 
+	   rightEyePose => RightEyePose
+	 }.
 
 terminate(GSt) ->
     io:format("tiltfive_wx:terminate: ~p~n", [GSt]),
@@ -84,74 +96,12 @@ terminate(GSt) ->
 	  glasses_state().
 pose(GSt, Pose) ->
     io:format("tiltfive_wx:pose: ~p pose=~p~n", [GSt,Pose]),
-    %% Here we should update the glasses pose transformation
-    Position = Pose#t5_glasses_pose.posGLS_GBD,
-    Orientation = Pose#t5_glasses_pose.rotToGLS_GBD,
-
-    GSt#{ position => Position, orientation => Orientation }.
-
-
-	%% const float ratio = defaultWidth / (float)defaultHeight;
-
-	%% // Rotate cube
-	%% GLApp::Transform modelTran;
-	%% modelTran.SetEuler(0, 0, (float)glfwGetTime());
-	%% modelTran.SetScale(0.1f);
-
-	%% // Model to world
-	%% auto modelMat = modelTran.MatrixToParentFrame();
-	%% // World to eye
-	%% auto viewLeftMat = leftEyePose.MatrixToLocalFrame() * headPose.MatrixToLocalFrame() * gameboardPose.MatrixToLocalFrame();
-	%% auto viewRightMat = rightEyePose.MatrixToLocalFrame() * headPose.MatrixToLocalFrame() * gameboardPose.MatrixToLocalFrame();
-	%% // Perspective projection
-	%% auto perspectiveProj = glm::perspective(glm::radians(defaultFOV), ratio, 0.1f, 100.0f);
-
-	%% cubeShader->Use();
-	%% cubeVertexArrays->Bind();
-
-
-	%% // Render left eye
-	%% auto mvpLeft = perspectiveProj * viewLeftMat * modelMat;
-
-	%% // Render right eye
-	%% auto mvpRight = perspectiveProj * viewRightMat * modelMat;
-
-	%% int width = 0;
-	%% int height = 0;
-	%% GetFramebufferSize(width, height);
-	%% if(useMultiview) {
-	%% 	glm::highp_mat4 mvpArr[2];
-	%% 	mvpArr[0] = mvpLeft;
-	%% 	mvpArr[1] = mvpRight;
-
-	%% 	cubeShader->Set("MVP", mvpArr);
-	%% 	stereoEyeDisplay.BeginDraw();
-	%% 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	%% 	glDrawArrays(GL_TRIANGLES, 0, 36);
-	%% 	stereoEyeDisplay.EndDraw();
-
-	%% 	leftEyeDisplay.BlitFromFrameBuffer(*leftLayerFramebuffer);
-	%% 	rightEyeDisplay.BlitFromFrameBuffer(*rightLayerFramebuffer);
-
-	%% 	rightEyeDisplay.BlitToScreen(width, height);
-	%% }
-	%% else {
-	%% 	cubeShader->Set("MVP", mvpLeft);
-	%% 	leftEyeDisplay.BeginDraw();
-	%% 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	%% 	glDrawArrays(GL_TRIANGLES, 0, 36);
-	%% 	leftEyeDisplay.EndDraw();
-
-	%% 	cubeShader->Set("MVP", mvpRight);
-	%% 	rightEyeDisplay.BeginDraw();
-	%% 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	%% 	glDrawArrays(GL_TRIANGLES, 0, 36);
-	%% 	rightEyeDisplay.EndDraw();
-
-	%% 	// Blit right eye to display
-	%% 	rightEyeDisplay.BlitToScreen(width, height);
-	%% }
-
+    Position = t5_vec_to_vecf(Pose#t5_glasses_pose.posGLS_GBD),
+    Orientation = t5_quat_to_quatf(Pose#t5_glasses_pose.rotToGLS_GBD),
+    #{ headPose := HeadPose } = GSt,
+    HeadPos1 = HeadPose#transform{ position = Position,
+				   orientation = Orientation },
+    GSt#{ headPose => HeadPos1 }.
 
 %%
 %% Handle events like wand button press etc
@@ -163,18 +113,68 @@ handle_event(GSt, Event) ->
     io:format("tiltfive_wx:handle_event: ~p event=~p~n", [GSt,Event]),
     GSt.
 
-run(GSt) ->
-    %% io:format("tiltfive_wx:run: ~p~n", [GSt]),
-    #{ width := W, height := H,
-       canvas := Canvas, context := Context,  
-       framebuffers := [L,R], textures := [Tl,Tr],
-       angle1 := A1, step1 := Step1,
-       angle2 := A2, step2 := Step2 } = GSt,
+%%
+%% Model view projection
+%%
+%%   v' = P*V*M*v
+%% where
+%%  P = perspective matrix
+%%  V = view matrix
+%%  M = model matrix
+%%
+%%  model matrix M is composed of
+%%   
+%%   M = T*R*S
+%% where
+%%   T = translation matrix
+%%   R = rotation matrix
+%%   S = scale matrix
+%%
+
+run(GSt = #{ start_time := T0, 
+	     headPose := HeadPose,
+	     leftEyePose := LeftEyePose,
+	     rightEyePose := RightEyePose,
+	     gameboardPose := GameboardPose,
+	     width := W, height := H,
+	     canvas := Canvas, context := Context,  
+	     framebuffers := [L,R], textures := [Tl,Tr],
+	     angle1 := A1, step1 := Step1,
+	     angle2 := A2, step2 := Step2 }) ->
+
+    Time = (erlang:system_time(micro_seconds) - T0) / 1000000,
+    Ratio = ?defaultWidth / ?defaultHeight,
+
+    %% Model transform (rotate the model atoun z-axis)
+    %% 1 radian per second
+    ModelTran = tiltfive_transform:set_euler(tiltfive_transform:new(),
+					     0, 0, Time),
+    ModelTran1 = tiltfive_transform:set_scale(ModelTran, 0.1),
+    ModelMat = tiltfive_transform:matrix_to_parent_frame(ModelTran1),
+
+    GameMat = tiltfive_transform:matrix_to_local_frame(GameboardPose),
+
+    HeadMat = tiltfive_transform:matrix_to_local_frame(HeadPose),
+    LLF = tiltfive_transform:matrix_to_local_frame(LeftEyePose),
+    ViewLeftMat = tiltfive_transform:mul3(LLF, HeadMat, GameMat),
+    RLF = tiltfive_transform:matrix_to_local_frame(RightEyePose),
+    ViewRightMat = tiltfive_transform:mul3(RLF, HeadMat,GameMat),
+    Transform = e3d_transform:perspective(?radians(?defaultFOV),Ratio,
+					  0.1,100.0),
+    PerspectiveMat = e3d_transform:matrix(Transform),
+
+    %% Render left eye
+    MvpLeft = tiltfive_transform:mul3(PerspectiveMat, ViewLeftMat, ModelMat),
+    
+    %% Render right eye
+    MvpRight = tiltfive_transform:mul3(PerspectiveMat, ViewRightMat,ModelMat),
+
+
     true = wxGLCanvas:setCurrent(Canvas, Context),
 
-    Cube1 = #cube{id=left,framebuffer=L,texture=Tl},
+    Cube1 = #cube{id=left,framebuffer=L,texture=Tl, mvp=MvpLeft},
     render_cube(Cube1, A1, W, H),
-    Cube2 = #cube{id=right,framebuffer=R,texture=Tr},
+    Cube2 = #cube{id=right,framebuffer=R,texture=Tr, mvp=MvpRight},
     render_cube(Cube2, A1, W, H),
 
     setup_screen(W, H),
@@ -339,21 +339,25 @@ dump_texture(Cube, W, H) ->
 -endif.
 
 
-render_cube(#cube{id=_ID,framebuffer=F, texture=_T, png=_Png}, A, W, H) ->
+render_cube(#cube{id=_ID,framebuffer=F, texture=_T, png=_Png, mvp=MVP}, A, W, H) ->
     gl:bindFramebuffer(?GL_FRAMEBUFFER, F),
-    setup_cube(W, H),
+    setup_cube(W, H, MVP),
     draw_cube(A),
     %% if Png /= undefined -> save_image(F, W, H, Png); true -> ok end,
     gl:bindFramebuffer(?GL_FRAMEBUFFER, 0).
 
-setup_cube(W, H) ->
+setup_cube(W, H, MVP) ->
     gl:clearColor(0.0, 0.0, 0.0, 0.0),  %% totally transparent?
     gl:clear(?GL_COLOR_BUFFER_BIT bor ?GL_DEPTH_BUFFER_BIT),
     gl:enable(?GL_DEPTH_TEST),
     gl:viewport(0,0,W,H),
     gl:matrixMode(?GL_PROJECTION),
-    gl:loadIdentity(),
-    gl:ortho( -2.0, 2.0, -2.0*H/W, 2.0*H/W, -20.0, 20.0),
+    if MVP =:= undefined ->
+	    gl:loadIdentity(),
+	    gl:ortho( -2.0, 2.0, -2.0*H/W, 2.0*H/W, -20.0, 20.0);
+       true ->
+	    gl:loadMatrixd(MVP)
+    end,
     gl:matrixMode(?GL_MODELVIEW),
     gl:loadIdentity(),
     gl:depthFunc(?GL_LESS),
