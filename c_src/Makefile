@@ -11,7 +11,7 @@ CFLAGS+=-std=c99 -Wall -g -O3
 LDFLAGS+=-shared -L $(TILT_FIVE_SDK)/lib/linux/x86_64 -lTiltFiveNative 
 
 OBJS = tiltfive_nif.o
-LIBS = 
+LIBS = -lglfw
 
 all: ../priv/$(APP)_nif.so
 

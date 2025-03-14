@@ -6,6 +6,8 @@
 #include <errno.h>
 #include <string.h>
 
+#include <GLFW/glfw3.h>
+
 #include "erl_nif.h"
 #include "erl_driver.h"
 
@@ -57,6 +59,7 @@
     atm_##name = enif_make_atom(env,#name)
 
 #define NIF_LIST \
+    NIF("new_wx_ref",0,new_wx_ref)			\
     NIF("list_glasses",0,tiltfive_list_glasses)		\
     NIF("create_glasses",1,tiltfive_create_glasses)	\
     NIF("get_system_integer_param",1,tiltfive_get_system_integer_param) \
@@ -93,14 +96,6 @@ typedef struct
     T5_ClientInfo info;
     void* platformContext;
 } nif_ctx_t;
-
-// THIS need to be shared between tiltfive and wx! how?
-typedef struct
-{
-    int argc;
-    const ERL_NIF_TERM* argv;
-    ERL_NIF_TERM result;
-} dyncallarg_t;
 
 typedef struct
 {
@@ -168,10 +163,12 @@ DECL_ATOM(permission_denied);
 DECL_ATOM(invalid_buffer_size);
 DECL_ATOM(invalid_geometry);
 // dyncall
+DECL_ATOM(init);
 DECL_ATOM(send_frame_to_glasses);
 DECL_ATOM(init_glasses_graphics_context);
 
 ErlNifResourceType *glasses_r;
+ErlNifResourceType *wx_r;
 
 // Data types and records
 
@@ -551,6 +548,20 @@ static int get_t5_frame_info(ErlNifEnv* env, ERL_NIF_TERM arg, T5_FrameInfo* inf
     info->vci.width_VCI = width_VCI;
     info->vci.height_VCI = height_VCI;
     return 1;
+}
+
+// WX API
+
+static ERL_NIF_TERM new_wx_ref(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
+{
+    ERL_NIF_TERM term;
+    void* wxp;
+    
+    if ((wxp = enif_alloc_resource(wx_r, sizeof(long))) == NULL)
+	return enif_make_badarg(env);
+    term = enif_make_resource(env, wxp);
+    enif_release_resource(wxp);
+    return term;
 }
 
 // API
@@ -1294,6 +1305,7 @@ static int load_atoms(ErlNifEnv* env)
     LOAD_ATOM(invalid_buffer_size);
     LOAD_ATOM(invalid_geometry);
     // dyncall
+    LOAD_ATOM(init);    
     LOAD_ATOM(send_frame_to_glasses);
     LOAD_ATOM(init_glasses_graphics_context);
     return 0;
@@ -1308,25 +1320,63 @@ static void glasses_dtor(ErlNifEnv *env, tiltfive_glasses_t* obj)
 // execute nif from other thread (wx)
 static void glasses_dyncall(ErlNifEnv* caller_env, void* obj, void* call_data)
 {
-    dyncallarg_t* dap = (dyncallarg_t*) call_data;
+    ERL_NIF_TERM* darg = (ERL_NIF_TERM*) call_data;
+    // int argc = (int) darg[0];
+    const ERL_NIF_TERM* argv = (ERL_NIF_TERM*) darg[1];
     const ERL_NIF_TERM* argv2;
     int argc2;
     
-    DEBUGF("glasses_dyncall %T %T", dap->argv[0], dap->argv[1]);
+    DEBUGF("glasses_dyncall %T %T", argv[0], argv[1]);
 
-    if (!enif_get_tuple(caller_env, dap->argv[1], &argc2, &argv2)) {
-	dap->result = ATOM(error);
+    if (!enif_get_tuple(caller_env, argv[1], &argc2, &argv2)) {
+	darg[0] = ATOM(error);
 	return;
     }
     
-    if (dap->argv[0] == ATOM(send_frame_to_glasses)) {
-	dap->result = tiltfive_send_frame_to_glasses(caller_env, argc2, argv2);
+    if (argv[0] == ATOM(send_frame_to_glasses)) {
+	darg[0] = tiltfive_send_frame_to_glasses(caller_env,
+						 argc2, argv2);
     }
-    else if (dap->argv[0] == ATOM(init_glasses_graphics_context)) {
-	dap->result = tiltfive_init_glasses_graphics_context(caller_env,
-							     argc2, argv2);
+    else if (argv[0] == ATOM(init_glasses_graphics_context)) {
+	darg[0] = tiltfive_init_glasses_graphics_context(caller_env,
+							 argc2, argv2);
     }
-    DEBUGF("return %T = %T", dap->argv[0], dap->result);
+    DEBUGF("return %T = %T", argv[0], darg[0]);
+}
+
+
+static void wx_dtor(ErlNifEnv *env, tiltfive_glasses_t* obj)
+{
+    // nif_ctx_t* ctx = (nif_ctx_t*) enif_priv_data(env);
+    DEBUGF(stderr, "wx_dtor");
+}
+
+// execute nif from other thread (wx)
+static void wx_dyncall(ErlNifEnv* caller_env, void* obj, void* call_data)
+{
+    ERL_NIF_TERM* darg = (ERL_NIF_TERM*) call_data;
+    // int argc = (int) darg[0];
+    const ERL_NIF_TERM* argv = (ERL_NIF_TERM*) darg[1];
+    const ERL_NIF_TERM* argv2;
+    int argc2;
+    
+    DEBUGF("wx_dyncall %T %T", argv[0], argv[1]);
+
+    if (!enif_get_tuple(caller_env, argv[1], &argc2, &argv2)) {
+	darg[0] = ATOM(error);
+	return;
+    }
+    if (argv[0] == ATOM(init)) {
+	if (!glfwInit()) {
+	    printf("GLFW initialization failed\r\n");
+	    darg[0] = ATOM(error);
+	}
+	else {
+	    printf("GLFW initialized\r\n");
+	    darg[0] = ATOM(ok);
+	}
+    }
+    DEBUGF("return %T = %T", argv[0], darg[0]);
 }
 
 
@@ -1336,24 +1386,40 @@ static int tilefive_load(ErlNifEnv* env, void** priv_data, ERL_NIF_TERM load_inf
     UNUSED(load_info);
     nif_ctx_t* ctx;
     ErlNifResourceFlags tried;
-    ErlNifResourceTypeInit g_init;
+    ErlNifResourceTypeInit glasses;
+    ErlNifResourceTypeInit wx;    
     
     DEBUGF("load%s", "");
 
-    g_init.dtor = (ErlNifResourceDtor*) glasses_dtor;
-    g_init.stop = (ErlNifResourceStop*) NULL;
-    g_init.down = (ErlNifResourceDown*) NULL;
-    g_init.members = 4;
-    g_init.dyncall = (ErlNifResourceDynCall*) glasses_dyncall;
-
+    glasses.dtor = (ErlNifResourceDtor*) glasses_dtor;
+    glasses.stop = (ErlNifResourceStop*) NULL;
+    glasses.down = (ErlNifResourceDown*) NULL;
+    glasses.members = 4;
+    glasses.dyncall = (ErlNifResourceDynCall*) glasses_dyncall;
+    
     if ((glasses_r =
 	 enif_init_resource_type(env,
 				 "glasses",
-				 &g_init,
+				 &glasses,
 				 ERL_NIF_RT_CREATE, // | ERL_NIF_RT_TAKEOVER,
 				 &tried)) == NULL) {
 	return -1;
     }
+
+    wx.dtor = (ErlNifResourceDtor*) wx_dtor;
+    wx.stop = (ErlNifResourceStop*) NULL;
+    wx.down = (ErlNifResourceDown*) NULL;
+    wx.members = 4;
+    wx.dyncall = (ErlNifResourceDynCall*) wx_dyncall;
+
+    if ((wx_r =
+	 enif_init_resource_type(env,
+				 "wx",
+				 &wx,
+				 ERL_NIF_RT_CREATE, // | ERL_NIF_RT_TAKEOVER,
+				 &tried)) == NULL) {
+	return -1;
+    }    
 
     if ((ctx = (nif_ctx_t*) enif_alloc(sizeof(nif_ctx_t))) == NULL)
 	return -1;
@@ -1382,26 +1448,43 @@ static int tilefive_upgrade(ErlNifEnv* env, void** priv_data,
     UNUSED(env);
     UNUSED(load_info);
     ErlNifResourceFlags tried;
-    ErlNifResourceTypeInit g_init;
+    ErlNifResourceTypeInit glasses;
+    ErlNifResourceTypeInit wx;    
     // nif_ctx_t* ctx = (nif_ctx_t*) *old_priv_data;
     
     DEBUGF("upgrade%s", "");
 
-    g_init.dtor = (ErlNifResourceDtor*) glasses_dtor;
-    g_init.stop = (ErlNifResourceStop*) NULL;
-    g_init.down = (ErlNifResourceDown*) NULL;
-    g_init.members = 4;
-    g_init.dyncall = (ErlNifResourceDynCall*) glasses_dyncall;
+    glasses.dtor = (ErlNifResourceDtor*) glasses_dtor;
+    glasses.stop = (ErlNifResourceStop*) NULL;
+    glasses.down = (ErlNifResourceDown*) NULL;
+    glasses.members = 4;
+    wx.dyncall = (ErlNifResourceDynCall*) glasses_dyncall;    
 
     if ((glasses_r =
 	 enif_init_resource_type(env,
 				 "glasses",
-				 &g_init,
+				 &glasses,
 				 ERL_NIF_RT_CREATE, // | ERL_NIF_RT_TAKEOVER,
 				 &tried)) == NULL) {
 	return -1;
     }
 
+    wx.dtor = (ErlNifResourceDtor*) wx_dtor;
+    wx.stop = (ErlNifResourceStop*) NULL;
+    wx.down = (ErlNifResourceDown*) NULL;
+    wx.members = 4;
+    wx.dyncall = (ErlNifResourceDynCall*) wx_dyncall;
+
+    if ((wx_r =
+	 enif_init_resource_type(env,
+				 "wx",
+				 &wx,
+				 ERL_NIF_RT_CREATE, // | ERL_NIF_RT_TAKEOVER,
+				 &tried)) == NULL) {
+	return -1;
+    }
+
+    
     if (load_atoms(env) < 0)
 	return -1;
     *priv_data = *old_priv_data;

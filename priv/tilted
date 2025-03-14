@@ -6,4 +6,4 @@ TILTFIVE_SO=$TILT_FIVE_SDK/lib/linux/x86_64/libTiltFiveNative.so
 #OPENGL_SO=/usr/lib/x86_64-linux-gnu/libGL.so
 #GLX_SO=/usr/lib/x86_64-linux-gnu/libGLX.so.0
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
-LD_PRELOAD=$TILTFIVE_SO $HOME/src/otp_src_27.2/bin/erl -noshell -config $HOME/erlang/tiltfive/tiltfive.config -s tiltfive_test
+LD_PRELOAD=$TILTFIVE_SO $HOME/work/otp/bin/erl -noshell -config $HOME/erlang/tiltfive/tiltfive.config -s tiltfive_test

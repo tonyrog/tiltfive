@@ -189,8 +189,12 @@ run(GSt = #{ start_time := T0,
 %% prepare for stereo rendering
 %%
 wx_init(GSt) ->
-    wxe_master:start(false),
+    Ref = tiltfive:new_wx_ref(),  %% dyn init handle
+    gl:init_nif(),
+    wxe_master:start(false, [{init, {glwf}, tiltfive, wx, Ref}]),
     wxe_master:init_opengl(),
+
+
     Wx = wx:new(),
     
     #{ width := W, height := H } = GSt,
